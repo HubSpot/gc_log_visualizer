@@ -46,3 +46,15 @@ gnuplot.
   brew link libjpeg
 ```
 
+## Examples
+
+To-space exhaustion from traffic bursts on cache
+expiration events. Solution: use stampeding herd protection.
+
+![example of to-space exhaustion](images/to-space-exhaustion.png)
+
+This visualization of humongous objects shows the sizes in KB,
+as well as the vertical groupings that have the potential to
+cause to-space exhaustion.
+
+![example of humongous objects](images/humongous-objects.png)
