@@ -150,7 +150,7 @@ class LogParser:
 
       # humongous object sizes
       if os.stat(self.humongous_objects_file.name).st_size > 0:
-        gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-humongous.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.humongous_objects_file.name)
+        gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-humongous.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2 title \"humongous-object-size(KB)\"'" % (self.size, name, xrange, self.humongous_objects_file.name)
         os.system(gnuplot_cmd)
 
     return
@@ -277,7 +277,7 @@ class LogParser:
   def collect_humongous_objects(self, line):
     m = re.match(LogParser.humongousObjectPattern, line, flags=0)
     if m:
-      self.humongous_file.write("%s %s\n" % (self.timestamp_string(), int(m.group(1))))
+      self.humongous_objects_file.write("%s %s\n" % (self.timestamp_string(), int(m.group(1)) / 1024))
 
   def line_has_gc(self, line):
     m = re.match(LogParser.heapG1GCPattern, line, flags=0)
