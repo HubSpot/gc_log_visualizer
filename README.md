@@ -1,6 +1,6 @@
 # Run a gc.log through gnuplot for multiple views of GC performance
 
-The python script will use gnuplot to graph interesting characteristics
+The python script `gc_log_visualizer.py` will use gnuplot to graph interesting characteristics
 and data from the given gc log.
 
  * pre/post gc amounts for total heap
@@ -11,6 +11,20 @@ and data from the given gc log.
  * Multi-phase concurrent mark cycle duration (g1gc)
  * Line graph of pre-gc sizes, young old and total. to-space exhaustion events added for g1gc
  * Eden size pre/post. For g1gc shows how the alg floats the target Eden size around.
+
+The shell script `regionsize_vs_objectsize.sh` will take a gc.log
+as input and return the percent of Humongous Objects that would fit
+into various G1RegionSize's (2mb-32mb by powers of 2).
+
+```
+  ./regionsize_vs_objectsize.sh <gc.log>
+  1986 humongous objects referenced in <gc.log>
+  32% would not be humongous with a 2mb g1 region size
+  77% would not be humongous with a 4mb g1 region size
+  100% would not be humongous with a 8mb g1 region size
+  100% would not be humongous with a 16mb g1 region size
+  100% would not be humongous with a 32mb g1 region size
+```
 
 ## How to run
 The start and end dates are optional and can be any format gnuplot understands.
