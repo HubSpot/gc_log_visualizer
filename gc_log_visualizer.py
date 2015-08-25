@@ -7,7 +7,7 @@ import os
 import dateutil.parser
 
 class LogParser:
-  heapG1GCPattern = '\s*\[Eden: ([0-9.]+)([BKMG])\(([0-9.]+)([BKMG])\)->[0-9.BKMG()]+ Survivors: [0-9.BKMG]+->[0-9.BKMG]+ Heap: ([0-9.]+)([BKMG])\([0-9.BKMG]+\)->([0-9.]+)([BKMG])\([0-9.BKMG]+\)'
+  heapG1GCPattern = '\s*\[Eden: ([0-9.]+)([BKMG])\(([0-9.]+)([BKMG])\)->[0-9.BKMG()]+ Survivors: ([0-9.]+)([BKMG])->([0-9.]+)([BKMG]) Heap: ([0-9.]+)([BKMG])\([0-9.BKMG]+\)->([0-9.]+)([BKMG])\([0-9.BKMG]+\)'
   parallelPattern = '\s*\[PSYoungGen: ([0-9.]+)([BKMG])->([0-9.]+)([BKMG])\([0-9.MKBG]+\)\] ([0-9.]+)([MKBG])->([0-9.]+)([MKBG])\([0-9.MKBG]+\),'
   parallelFullPattern = '\s*\[PSYoungGen: ([0-9.]+)([BKMG])->([0-9.]+)([BKMG])\([0-9.MKBG]+\)\] \[ParOldGen: [0-9.BKMG]+->[0-9.BKMG]+\([0-9.MKBG]+\)\] ([0-9.]+)([MKBG])->([0-9.]+)([MKBG])\([0-9.MKBG]+\),'
   rootScanStartPattern = '[0-9T\-\:\.\+]* ([0-9.]*): \[GC concurrent-root-region-scan-start\]'
@@ -32,10 +32,13 @@ class LogParser:
     self.humongous_objects_file = open('humongous_objects.dat', "w+b")
     self.gc_alg_g1gc = False
     self.gc_alg_parallel = False
-    self.pre_gc_amount = 0
-    self.post_gc_amount = 0
-    self.young_current = 0
-    self.young_max = 0
+    self.pre_gc_total = 0
+    self.post_gc_total = 0
+    self.pre_gc_young = 0
+    self.pre_gc_young_target = 0
+    self.pre_gc_survivor = 0
+    self.post_gc_survivor = 0
+    self.tenured_delta = 0
     self.full_gc = False
     self.gc = False
     self.root_scan_start_time = 0
@@ -131,6 +134,14 @@ class LogParser:
     os.system(gnuplot_cmd)
 
     if self.gc_alg_g1gc:
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-tenured-delta.png\"; set xdata time; " \
+          "set ylabel \"MB\"; " \
+          "set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; " \
+          "%s " \
+          "plot \"%s\" using 1:6 with lines title \"tenured-delta\"'" % (self.size, name, xrange, self.young_file.name)
+      os.system(gnuplot_cmd)
+
+    if self.gc_alg_g1gc:
       # root-scan times
       gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-root-scan.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2 title \"root-scan-duration(ms)\"'" % (self.size, name, xrange, self.root_scan_file.name)
       os.system(gnuplot_cmd)
@@ -173,15 +184,15 @@ class LogParser:
     
   def output_data(self):
     self.pause_file.write("%s %.6f\n" % (self.timestamp_string(), self.pause_time))
-    self.young_file.write("%s %s %s %s %s\n" % (self.timestamp_string(), self.young_current, self.young_max, self.pre_gc_amount - self.young_current, self.pre_gc_amount))
+    self.young_file.write("%s %s %s %s %s %s\n" % (self.timestamp_string(), self.pre_gc_young, self.pre_gc_young_target, self.pre_gc_total - self.pre_gc_young, self.pre_gc_total, self.tenured_delta))
 
     # clean this up, full_gc's should probably graph
     # in the same chart as regular gc events if possible
     if self.full_gc:
-      self.full_gc_file.write("%s %s %s\n" % (self.timestamp_string(), self.pre_gc_amount, self.post_gc_amount))
+      self.full_gc_file.write("%s %s %s\n" % (self.timestamp_string(), self.pre_gc_total, self.post_gc_total))
       self.full_gc = False
     elif self.gc:
-      self.gc_file.write("%s %s %s\n" % (self.timestamp_string(), self.pre_gc_amount, self.post_gc_amount))
+      self.gc_file.write("%s %s %s\n" % (self.timestamp_string(), self.pre_gc_total, self.post_gc_total))
       self.gc = False
 
   def output_pause_counts(self):
@@ -304,14 +315,24 @@ class LogParser:
 
   def store_gc_amount(self, matcher):
       i = 1
-      self.young_current = self.scale(matcher.group(i), matcher.group(i+1))
+      self.pre_gc_young = self.scale(matcher.group(i), matcher.group(i+1))
       i += 2
-      self.young_max = self.scale(matcher.group(i), matcher.group(i+1))
+      self.pre_gc_young_target = self.scale(matcher.group(i), matcher.group(i+1))
+
+      if self.gc_alg_g1gc:
+        i += 2
+        self.pre_gc_survivor = self.scale(matcher.group(i), matcher.group(i+1))
+        i += 2
+        self.post_gc_survivor = self.scale(matcher.group(i), matcher.group(i+1))
+
       i += 2
-      self.pre_gc_amount = self.scale(matcher.group(i), matcher.group(i+1))
+      self.pre_gc_total = self.scale(matcher.group(i), matcher.group(i+1))
       i += 2
-      self.post_gc_amount = self.scale(matcher.group(i), matcher.group(i+1))
-    
+      self.post_gc_total = self.scale(matcher.group(i), matcher.group(i+1))
+
+      if self.gc_alg_g1gc:
+        self.tenured_delta = (self.post_gc_total - self.post_gc_survivor) - (self.pre_gc_total - self.pre_gc_young - self.pre_gc_survivor)
+
   def scale(self, amount, unit):
     rawValue = float(amount)
     if unit == 'B':

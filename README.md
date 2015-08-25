@@ -11,6 +11,9 @@ and data from the given gc log.
  * Multi-phase concurrent mark cycle duration (g1gc)
  * Line graph of pre-gc sizes, young old and total. to-space exhaustion events added for g1gc
  * Eden size pre/post. For g1gc shows how the alg floats the target Eden size around.
+ * Delta of Tenured data for each GC event for g1gc only.
+   The idea of this graph is to get a rough idea on the Tenured fill rate.
+   Not entirely sure of what's going on here, after a young gc event Tenured can drop significantly.
 
 The shell script `regionsize_vs_objectsize.sh` will take a gc.log
 as input and return the percent of Humongous Objects that would fit
