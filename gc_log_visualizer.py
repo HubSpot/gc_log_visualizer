@@ -20,6 +20,7 @@ class LogParser:
   humongousObjectPattern = '.*request concurrent cycle initiation, .*, allocation request: ([0-9]*) .*, source: concurrent humongous allocation]'
 
   def __init__(self, input_file):
+    self.timestamp = None
     self.input_file = input_file
     self.pause_file = open('pause.dat', "w+b")
     self.pause_count_file = open('pause_count.dat', "w+b")
@@ -221,7 +222,7 @@ class LogParser:
       if t:
         t = t[:-1]
    
-    if t:
+    if t and len(t) > 15:  # 15 is mildly arbitrary
       try:
         self.timestamp = dateutil.parser.parse(t)
       except (ValueError, AttributeError), e:
@@ -282,12 +283,12 @@ class LogParser:
 
   def collect_to_space_exhaustion(self, line):
     m = re.match(LogParser.exhaustionPattern, line, flags=0)
-    if m:
+    if m and self.timestamp:
       self.exhaustion_file.write("%s %s\n" % (self.timestamp_string(), 100))
 
   def collect_humongous_objects(self, line):
     m = re.match(LogParser.humongousObjectPattern, line, flags=0)
-    if m:
+    if m and self.timestamp:
       self.humongous_objects_file.write("%s %s\n" % (self.timestamp_string(), int(m.group(1)) / 1024))
 
   def line_has_gc(self, line):
