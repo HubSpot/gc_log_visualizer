@@ -47,6 +47,7 @@ class LogParser:
     self.root_scan_mark_end_time = 0
     self.mixed_duration_start_time = 0
     self.mixed_duration_count = 0
+    self.total_pause_time = 0
     self.size = '1024,768'
     self.last_minute = -1
     self.reset_pause_counts()
@@ -84,6 +85,10 @@ class LogParser:
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set yrange [0:0.2]; set output \"%s-stw-200ms-cap.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.pause_file.name)
     os.system(gnuplot_cmd)
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.pause_file.name)
+    os.system(gnuplot_cmd)
+
+    # total pause time
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-total-pause.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:8 title \"%% of time in gc\"'" % (self.size, name, xrange, self.pause_count_file.name)
     os.system(gnuplot_cmd)
 
     # Note: This seems to have marginal utility as compared to the plot of wall time vs. pause time
@@ -200,7 +205,7 @@ class LogParser:
       self.gc = False
 
   def output_pause_counts(self):
-    self.pause_count_file.write("%s %s %s %s %s %s %s\n" % (self.timestamp_string(), self.under_50, self.under_90, self.under_120, self.under_150, self.under_200, self.over_200))
+    self.pause_count_file.write("%s %s %s %s %s %s %s %s\n" % (self.timestamp_string(), self.under_50, self.under_90, self.under_120, self.under_150, self.under_200, self.over_200, self.total_pause_time * 100 / 60))
 
   def line_has_pause_time(self, line):
     m = re.match("[0-9-]*T[0-9]+:([0-9]+):.* threads were stopped: ([0-9.]+) seconds", line, flags=0)
@@ -350,6 +355,8 @@ class LogParser:
     return rawValue
 
   def increment_pause_counts(self, pause_time):
+    self.total_pause_time = self.total_pause_time + pause_time
+
     if pause_time < 0.050:
       self.under_50 = self.under_50 + 1
     elif pause_time < 0.090:
@@ -370,6 +377,7 @@ class LogParser:
     self.under_150 = 0
     self.under_200 = 0
     self.over_200 = 0
+    self.total_pause_time = 0
 
 def main():
     logParser = LogParser(sys.argv[1])

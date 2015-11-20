@@ -7,6 +7,7 @@ and data from the given gc log.
  * mixed gc duration, from the start of the first event until not continued in a new minor event (g1gc)
  * count of sequentials runs of mixed gc (g1gc)
  * stop-the-world pause times from GC events, other stw events ignored
+ * Percentage of total time spent in GC stop-the-world
  * Count of GC stop-the-world pause times grouped by time taken
  * Multi-phase concurrent mark cycle duration (g1gc)
  * Line graph of pre-gc sizes, young old and total. to-space exhaustion events added for g1gc
