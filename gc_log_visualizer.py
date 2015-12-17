@@ -51,6 +51,7 @@ class LogParser:
     self.size = '1024,768'
     self.last_minute = -1
     self.reset_pause_counts()
+    self.occupancy_threshold = None
 
   def cleanup(self):
     os.unlink(self.pause_file.name)
@@ -79,7 +80,12 @@ class LogParser:
     if start is None:
       xrange = ""
     else:
-      xrange = "set xrange [ \"%s\":\"%s\" ];" % (start, end)
+      xrange = "set xrange [ \"%s\":\"%s\" ]; " % (start, end)
+
+    # Add a line for the occupancy threshold if found
+    occupancy_threshold_arrow = ""
+    if self.occupancy_threshold:
+      occupancy_threshold_arrow = "set arrow 10 from graph 0,first %d to graph 1, first %d nohead; " % (self.occupancy_threshold, self.occupancy_threshold)
 
     # one capped at .2, other with no yrange
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set yrange [0:0.2]; set output \"%s-stw-200ms-cap.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.pause_file.name)
@@ -107,31 +113,28 @@ class LogParser:
         "set ylabel \"MB\"; " \
         "set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; " \
         "%s " \
+        "%s " \
         "plot \"%s\" using 1:2 title \"pre-gc-amount\"" \
-        ", \"%s\" using 1:3 title \"post-gc-amount\"'" % (self.size, name, xrange, self.gc_file.name, self.gc_file.name)
+        ", \"%s\" using 1:3 title \"post-gc-amount\"'" % (self.size, name, occupancy_threshold_arrow, xrange, self.gc_file.name, self.gc_file.name)
     os.system(gnuplot_cmd)
 
-    # line graph of Eden, Tenured and the Total
     # Add to-space exhaustion events if any are found
     if self.gc_alg_g1gc and os.stat(self.exhaustion_file.name).st_size > 0:
-      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-totals.png\"; set xdata time; " \
-          "set ylabel \"MB\";" \
-          "set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; " \
-          "%s " \
-          "plot \"%s\" using 1:2 title \"young\" with lines" \
-          ", \"%s\" using 1:4 title \"old\" with lines" \
-          ", \"%s\" using 1:2 title \"to-space-exhaustion\" pt 7 ps 3" \
-          ", \"%s\" using 1:5 title \"total\" with lines'" % (self.size, name, xrange, self.young_file.name, self.young_file.name, self.exhaustion_file.name, self.young_file.name)
-      os.system(gnuplot_cmd)
+      to_space_exhaustion = ", \"%s\" using 1:2 title \"to-space-exhaustion\" pt 7 ps 3" % (self.exhaustion_file.name)
     else:
-      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-totals.png\"; set xdata time; " \
-          "set ylabel \"MB\";" \
-          "set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; " \
-          "%s " \
-          "plot \"%s\" using 1:2 title \"young\" with lines" \
-          ", \"%s\" using 1:4 title \"old\" with lines" \
-          ", \"%s\" using 1:5 title \"total\" with lines'" % (self.size, name, xrange, self.young_file.name, self.young_file.name, self.young_file.name)
-      os.system(gnuplot_cmd)
+      to_space_exhaustion = ""
+
+    # line graph of Eden, Tenured and the Total
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-totals.png\"; set xdata time; " \
+        "set ylabel \"MB\"; " \
+        "set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; " \
+        "%s " \
+        "%s " \
+        "plot \"%s\" using 1:2 title \"young\" with lines" \
+        ", \"%s\" using 1:4 title \"old\" with lines" \
+        "%s" \
+        ", \"%s\" using 1:5 title \"total\" with lines'" % (self.size, name, xrange, occupancy_threshold_arrow, self.young_file.name, self.young_file.name, to_space_exhaustion, self.young_file.name)
+    os.system(gnuplot_cmd)
 
 
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-young.png\"; set xdata time; " \
@@ -186,6 +189,9 @@ class LogParser:
         self.collect_mixed_duration_times(line)
         self.collect_to_space_exhaustion(line)
         self.collect_humongous_objects(line)
+
+        if not self.occupancy_threshold:
+          self.collect_occupancy_threshold_pattern(line)
 
         # This needs to be last
         if self.line_has_pause_time(line):
@@ -298,6 +304,11 @@ class LogParser:
     m = re.match(LogParser.humongousObjectPattern, line, flags=0)
     if m and self.timestamp:
       self.humongous_objects_file.write("%s %s\n" % (self.timestamp_string(), int(m.group(1)) / 1024))
+
+  def collect_occupancy_threshold_pattern(self, line):
+    m = re.match(".*threshold: ([0-9]*) bytes .*, source: end of GC\]", line, flags=0)
+    if m:
+      self.occupancy_threshold = int(int(m.group(1)) / 1048576)
 
   def line_has_gc(self, line):
     m = re.match(LogParser.heapG1GCPattern, line, flags=0)
