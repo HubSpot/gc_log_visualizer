@@ -18,6 +18,8 @@ class LogParser:
   mixedEndPattern = '\s*([0-9.]*): \[G1Ergonomics \(Mixed GCs\) do not continue mixed GCs, .*'
   exhaustionPattern = '.*\(to-space exhausted\).*'
   humongousObjectPattern = '.*request concurrent cycle initiation, .*, allocation request: ([0-9]*) .*, source: concurrent humongous allocation]'
+  occupancyThresholdPattern = '.*threshold: ([0-9]*) bytes .*, source: end of GC\]'
+  reclaimablePattern = '.*reclaimable: ([0-9]*) bytes \(([0-9.]*) %\), threshold: ([0-9]*).00 %]'
 
   def __init__(self, input_file):
     self.timestamp = None
@@ -31,6 +33,7 @@ class LogParser:
     self.mixed_duration_file = open('mixed_duration.dat', "w+b")
     self.exhaustion_file = open('exhaustion.dat', "w+b")
     self.humongous_objects_file = open('humongous_objects.dat', "w+b")
+    self.reclaimable_file = open('reclaimable.dat', "w+b")
     self.gc_alg_g1gc = False
     self.gc_alg_parallel = False
     self.pre_gc_total = 0
@@ -63,6 +66,7 @@ class LogParser:
     os.unlink(self.mixed_duration_file.name)
     os.unlink(self.exhaustion_file.name)
     os.unlink(self.humongous_objects_file.name)
+    os.unlink(self.reclaimable_file.name)
     return
 
   def close_files(self):
@@ -75,6 +79,7 @@ class LogParser:
     self.mixed_duration_file.close()
     self.exhaustion_file.close()
     self.humongous_objects_file.close()
+    self.reclaimable_file.close()
 
   def gnuplot(self, name, start, end):
     if start is None:
@@ -133,7 +138,8 @@ class LogParser:
         "plot \"%s\" using 1:2 title \"young\" with lines" \
         ", \"%s\" using 1:4 title \"old\" with lines" \
         "%s" \
-        ", \"%s\" using 1:5 title \"total\" with lines'" % (self.size, name, xrange, occupancy_threshold_arrow, self.young_file.name, self.young_file.name, to_space_exhaustion, self.young_file.name)
+        ", \"%s\" using 1:5 title \"total\" with lines" \
+        ", \"%s\" using 1:2 title \"reclaimable\"'" % (self.size, name, xrange, occupancy_threshold_arrow, self.young_file.name, self.young_file.name, to_space_exhaustion, self.young_file.name, self.reclaimable_file.name)
     os.system(gnuplot_cmd)
 
 
@@ -189,6 +195,7 @@ class LogParser:
         self.collect_mixed_duration_times(line)
         self.collect_to_space_exhaustion(line)
         self.collect_humongous_objects(line)
+        self.collect_reclaimable(line)
 
         if not self.occupancy_threshold:
           self.collect_occupancy_threshold_pattern(line)
@@ -306,9 +313,14 @@ class LogParser:
       self.humongous_objects_file.write("%s %s\n" % (self.timestamp_string(), int(m.group(1)) / 1024))
 
   def collect_occupancy_threshold_pattern(self, line):
-    m = re.match(".*threshold: ([0-9]*) bytes .*, source: end of GC\]", line, flags=0)
+    m = re.match(LogParser.occupancyThresholdPattern, line, flags=0)
     if m:
       self.occupancy_threshold = int(int(m.group(1)) / 1048576)
+
+  def collect_reclaimable(self, line):
+    m = re.match(LogParser.reclaimablePattern, line, flags=0)
+    if m and int(float(m.group(2))) >= int(m.group(3)) and self.timestamp:
+      self.reclaimable_file.write("%s %d\n" % (self.timestamp_string(), long(m.group(1)) / 1048576))
 
   def line_has_gc(self, line):
     m = re.match(LogParser.heapG1GCPattern, line, flags=0)

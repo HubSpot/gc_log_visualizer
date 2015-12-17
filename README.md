@@ -3,14 +3,14 @@
 The python script `gc_log_visualizer.py` will use gnuplot to graph interesting characteristics
 and data from the given gc log.
 
- * pre/post gc amounts for total heap
+ * pre/post gc amounts for total heap. Bar for `InitiatingHeapOccupancyPercent` if found.
  * mixed gc duration, from the start of the first event until not continued in a new minor event (g1gc)
  * count of sequentials runs of mixed gc (g1gc)
  * stop-the-world pause times from GC events, other stw events ignored
  * Percentage of total time spent in GC stop-the-world
  * Count of GC stop-the-world pause times grouped by time taken
  * Multi-phase concurrent mark cycle duration (g1gc)
- * Line graph of pre-gc sizes, young old and total. to-space exhaustion events added for g1gc
+ * Line graph of pre-gc sizes, young old and total. to-space exhaustion events added for g1gc. Bar for `InitiatingHeapOccupancyPercent` if found. Reclaimable (mb) amount per mixed gc event.
  * Eden size pre/post. For g1gc shows how the alg floats the target Eden size around.
  * Delta of Tenured data for each GC event for g1gc only.
    The idea of this graph is to get a rough idea on the Tenured fill rate.
@@ -65,6 +65,16 @@ gnuplot.
 ```
 
 ## Examples
+
+Line charts of generation sizes and total, bar for InitiatingHeapOccupancyPercent (in Mb),
+reclaimable amount per mixed gc event.
+
+![example of main chart with InitiatingHeapOccupancyPercent and reclaimable](images/ihop-and-reclaimable.png)
+
+Another example of the same chart but with the `InitiatingHeapOccupancyPercent`
+set below working set, which results in lots of mixed gc events shown as the reclaimable squares.
+
+![example of unhealthy main chart with InitiatingHeapOccupancyPercent and reclaimable](images/ihop-and-reclaimable-unhealthy.png)
 
 To-space exhaustion from traffic bursts on cache
 expiration events. Solution: use stampeding herd protection.
