@@ -25,6 +25,8 @@ class LogParser:
     self.timestamp = None
     self.input_file = input_file
     self.pause_file = open('pause.dat', "w+b")
+    self.young_pause_file = open('young-pause.dat', "w+b")
+    self.mixed_pause_file = open('mixed-pause.dat', "w+b")
     self.pause_count_file = open('pause_count.dat', "w+b")
     self.full_gc_file = open('full_gc.dat', "w+b")
     self.gc_file = open('gc.dat', "w+b")
@@ -58,6 +60,8 @@ class LogParser:
 
   def cleanup(self):
     os.unlink(self.pause_file.name)
+    os.unlink(self.young_pause_file.name)
+    os.unlink(self.mixed_pause_file.name)
     os.unlink(self.pause_count_file.name)
     os.unlink(self.full_gc_file.name)
     os.unlink(self.gc_file.name)
@@ -71,6 +75,8 @@ class LogParser:
 
   def close_files(self):
     self.pause_file.close()
+    self.young_pause_file.close()
+    self.mixed_pause_file.close()
     self.pause_count_file.close()
     self.gc_file.close()
     self.full_gc_file.close()
@@ -96,6 +102,10 @@ class LogParser:
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set yrange [0:0.2]; set output \"%s-stw-200ms-cap.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.pause_file.name)
     os.system(gnuplot_cmd)
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.pause_file.name)
+    os.system(gnuplot_cmd)
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-young-stw.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.young_pause_file.name)
+    os.system(gnuplot_cmd)
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-mixed-stw.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.mixed_pause_file.name)
     os.system(gnuplot_cmd)
 
     # total pause time
@@ -205,6 +215,11 @@ class LogParser:
           self.output_data()
     
   def output_data(self):
+    if self.mixed_duration_count == 0:
+      self.young_pause_file.write("%s %.6f\n" % (self.timestamp_string(), self.pause_time))
+    else:
+      self.mixed_pause_file.write("%s %.6f\n" % (self.timestamp_string(), self.pause_time))
+ 
     self.pause_file.write("%s %.6f\n" % (self.timestamp_string(), self.pause_time))
     self.young_file.write("%s %s %s %s %s %s\n" % (self.timestamp_string(), self.pre_gc_young, self.pre_gc_young_target, self.pre_gc_total - self.pre_gc_young, self.pre_gc_total, self.tenured_delta))
 
