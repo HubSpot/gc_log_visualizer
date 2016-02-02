@@ -6,6 +6,24 @@ import tempfile
 import os
 import dateutil.parser
 
+class StwSubTimings:
+  def __init__(self):
+    self.reset()
+
+  def reset(self):
+    self.ext_root_scan = 0
+    self.update_rs = 0
+    self.scan_rs = 0
+    self.object_copy = 0
+    self.termination = 0
+    self.other = 0
+
+  def unknown_time(self, total):
+    if total:
+      return int((total * 1000) - self.ext_root_scan - self.update_rs - self.scan_rs - self.object_copy - self.termination - self.other)
+    else:
+      return 0
+
 class LogParser:
   heapG1GCPattern = '\s*\[Eden: ([0-9.]+)([BKMG])\(([0-9.]+)([BKMG])\)->[0-9.BKMG()]+ Survivors: ([0-9.]+)([BKMG])->([0-9.]+)([BKMG]) Heap: ([0-9.]+)([BKMG])\([0-9.BKMG]+\)->([0-9.]+)([BKMG])\([0-9.BKMG]+\)'
   parallelPattern = '\s*\[PSYoungGen: ([0-9.]+)([BKMG])->([0-9.]+)([BKMG])\([0-9.MKBG]+\)\] ([0-9.]+)([MKBG])->([0-9.]+)([MKBG])\([0-9.MKBG]+\),'
@@ -57,6 +75,7 @@ class LogParser:
     self.last_minute = -1
     self.reset_pause_counts()
     self.occupancy_threshold = None
+    self.stw = StwSubTimings()
 
   def cleanup(self):
     os.unlink(self.pause_file.name)
@@ -103,9 +122,27 @@ class LogParser:
     os.system(gnuplot_cmd)
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.pause_file.name)
     os.system(gnuplot_cmd)
+
+    # Separate young and mixed stw events
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-young-stw.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.young_pause_file.name)
     os.system(gnuplot_cmd)
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-mixed-stw.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.mixed_pause_file.name)
+    os.system(gnuplot_cmd)
+
+    # Stw sub-timings
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-ext-root-scan.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:3'" % (self.size, name, xrange, self.pause_file.name)
+    os.system(gnuplot_cmd)
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-update-rs.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:4'" % (self.size, name, xrange, self.pause_file.name)
+    os.system(gnuplot_cmd)
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-scan-rs.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:5'" % (self.size, name, xrange, self.pause_file.name)
+    os.system(gnuplot_cmd)
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-object-copy.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:6'" % (self.size, name, xrange, self.pause_file.name)
+    os.system(gnuplot_cmd)
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-termination.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:7'" % (self.size, name, xrange, self.pause_file.name)
+    os.system(gnuplot_cmd)
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-other.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:8'" % (self.size, name, xrange, self.pause_file.name)
+    os.system(gnuplot_cmd)
+    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-unknown.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:9'" % (self.size, name, xrange, self.pause_file.name)
     os.system(gnuplot_cmd)
 
     # total pause time
@@ -210,17 +247,21 @@ class LogParser:
         if not self.occupancy_threshold:
           self.collect_occupancy_threshold_pattern(line)
 
+        # collect where time is spent inside stw
+        self.collect_stw_sub_timings(line)
+
         # This needs to be last
         if self.line_has_pause_time(line):
           self.output_data()
+          self.stw.reset()
     
   def output_data(self):
     if self.mixed_duration_count == 0:
       self.young_pause_file.write("%s %.6f\n" % (self.timestamp_string(), self.pause_time))
     else:
       self.mixed_pause_file.write("%s %.6f\n" % (self.timestamp_string(), self.pause_time))
- 
-    self.pause_file.write("%s %.6f\n" % (self.timestamp_string(), self.pause_time))
+
+    self.pause_file.write("%s %.6f %d %d %d %d %d %d %d\n" % (self.timestamp_string(), self.pause_time, self.stw.ext_root_scan, self.stw.update_rs, self.stw.scan_rs, self.stw.object_copy, self.stw.termination, self.stw.other, self.stw.unknown_time(self.pause_time)))
     self.young_file.write("%s %s %s %s %s %s\n" % (self.timestamp_string(), self.pre_gc_young, self.pre_gc_young_target, self.pre_gc_total - self.pre_gc_young, self.pre_gc_total, self.tenured_delta))
 
     # clean this up, full_gc's should probably graph
@@ -336,6 +377,24 @@ class LogParser:
     m = re.match(LogParser.reclaimablePattern, line, flags=0)
     if m and int(float(m.group(2))) >= int(m.group(3)) and self.timestamp:
       self.reclaimable_file.write("%s %d\n" % (self.timestamp_string(), long(m.group(1)) / 1048576))
+
+  def collect_stw_sub_timings(self, line):
+    if re.match('^[ ]+\[.*', line):
+      self.stw.ext_root_scan = self.parseMaxTiming('Ext Root Scanning', line, self.stw.ext_root_scan)
+      self.stw.update_rs = self.parseMaxTiming('Update RS', line, self.stw.update_rs)
+      self.stw.scan_rs = self.parseMaxTiming('Scan RS', line, self.stw.scan_rs)
+      self.stw.object_copy = self.parseMaxTiming('Object Copy', line, self.stw.object_copy)
+      self.stw.termination = self.parseMaxTiming('Termination', line, self.stw.termination)
+      m = re.match('^[ ]+\[Other: ([0-9.]+).*', line)
+      if m:
+        self.stw.other = int(float(m.group(1)))
+
+  def parseMaxTiming(self, term, line, current_value):
+    m = re.match("^[ ]+\[%s .* Max: ([0-9]+)\.[0-9],.*" % (term), line)
+    if m:
+      return int(float(m.group(1)))
+    else:
+      return current_value
 
   def line_has_gc(self, line):
     m = re.match(LogParser.heapG1GCPattern, line, flags=0)
