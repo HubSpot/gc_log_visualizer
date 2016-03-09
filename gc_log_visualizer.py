@@ -182,11 +182,11 @@ class LogParser:
         "set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; " \
         "%s " \
         "%s " \
-        "plot \"%s\" using 1:2 title \"young\" with lines" \
-        ", \"%s\" using 1:4 title \"old\" with lines" \
+        "plot \"%s\" using 1:2 title \"Eden\" with lines" \
+        ", \"%s\" using 1:4 title \"Tenured\" with lines" \
         "%s" \
-        ", \"%s\" using 1:5 title \"total\" with lines" \
-        ", \"%s\" using 1:2 title \"reclaimable\"'" % (self.size, name, xrange, occupancy_threshold_arrow, self.young_file.name, self.young_file.name, to_space_exhaustion, self.young_file.name, self.reclaimable_file.name)
+        ", \"%s\" using 1:5 title \"Total\" with lines" \
+        ", \"%s\" using 1:2 title \"Reclaimable\"'" % (self.size, name, xrange, occupancy_threshold_arrow, self.young_file.name, self.young_file.name, to_space_exhaustion, self.young_file.name, self.reclaimable_file.name)
     os.system(gnuplot_cmd)
 
 
