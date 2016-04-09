@@ -116,6 +116,7 @@ class LogParser:
     occupancy_threshold_arrow = ""
     if self.occupancy_threshold:
       occupancy_threshold_arrow = "set arrow 10 from graph 0,first %d to graph 1, first %d nohead; " % (self.occupancy_threshold, self.occupancy_threshold)
+      occupancy_threshold_arrow += "set label \"IHOP\" at graph 0,first %d offset 1,1; " % (self.occupancy_threshold)
 
     # one capped at .2, other with no yrange
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set yrange [0:0.2]; set output \"%s-stw-200ms-cap.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.pause_file.name)
