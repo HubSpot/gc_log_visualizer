@@ -52,6 +52,15 @@ The following gc params are required for full functionality.
   -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCApplicationStoppedTime -XX:+PrintAdaptiveSizePolicy
 ```
 
+## required python libs
+The python libs that are required can be found in the setup.py
+and handled in the usual manner.
+
+```
+# enter a virtualenv or not
+pip install -r requirements.txt
+```
+
 ## gnuplot
 The gc.log is parsed into flat files which are then run through
 gnuplot.
