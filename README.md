@@ -31,6 +31,7 @@ into various G1RegionSize's (2mb-32mb by powers of 2).
 ```
 
 ## How to run
+Use python 2.6 (running with 2.7 will throw an error currently).
 The start and end dates are optional and can be any format gnuplot understands.
 The second argument will be used as the base name for the created png files.
 
