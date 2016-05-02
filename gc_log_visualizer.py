@@ -28,6 +28,7 @@ class LogParser:
   heapG1GCPattern = '\s*\[Eden: ([0-9.]+)([BKMG])\(([0-9.]+)([BKMG])\)->[0-9.BKMG()]+ Survivors: ([0-9.]+)([BKMG])->([0-9.]+)([BKMG]) Heap: ([0-9.]+)([BKMG])\([0-9.BKMG]+\)->([0-9.]+)([BKMG])\([0-9.BKMG]+\)'
   parallelPattern = '\s*\[PSYoungGen: ([0-9.]+)([BKMG])->([0-9.]+)([BKMG])\([0-9.MKBG]+\)\] ([0-9.]+)([MKBG])->([0-9.]+)([MKBG])\([0-9.MKBG]+\),'
   parallelFullPattern = '\s*\[PSYoungGen: ([0-9.]+)([BKMG])->([0-9.]+)([BKMG])\([0-9.MKBG]+\)\] \[ParOldGen: [0-9.BKMG]+->[0-9.BKMG]+\([0-9.MKBG]+\)\] ([0-9.]+)([MKBG])->([0-9.]+)([MKBG])\([0-9.MKBG]+\),'
+  heapCMSPattern = '.*\[ParNew: ([0-9.]+)([BKMG])->([0-9.]+)([BKMG])\([0-9.BKMG]+\), [.0-9]+ secs\] ([0-9.]+)([BKMG])->([0-9.]+)([BKMG])\([0-9.BKMG]+\).*'
   rootScanStartPattern = '[0-9T\-\:\.\+]* ([0-9.]*): \[GC concurrent-root-region-scan-start\]'
   rootScanMarkEndPattern = '[0-9T\-\:\.\+]* ([0-9.]*): \[GC concurrent-mark-end, .*'
   rootScanEndPattern = '[0-9T\-\:\.\+]* ([0-9.]*): \[GC concurrent-cleanup-end, .*'
@@ -50,16 +51,20 @@ class LogParser:
     self.gc_file = open('gc.dat', "w+b")
     self.young_file = open('young.dat', "w+b")
     self.root_scan_file = open('rootscan.dat', "w+b")
+    self.cms_mark_file = open('cms_mark.dat', "w+b")
+    self.cms_rescan_file = open('cms_rescan.dat', "w+b")
     self.mixed_duration_file = open('mixed_duration.dat', "w+b")
     self.exhaustion_file = open('exhaustion.dat', "w+b")
     self.humongous_objects_file = open('humongous_objects.dat', "w+b")
     self.reclaimable_file = open('reclaimable.dat', "w+b")
     self.gc_alg_g1gc = False
+    self.gc_alg_cms = False
     self.gc_alg_parallel = False
     self.pre_gc_total = 0
     self.post_gc_total = 0
     self.pre_gc_young = 0
     self.pre_gc_young_target = 0
+    self.post_gc_young = 0
     self.pre_gc_survivor = 0
     self.post_gc_survivor = 0
     self.tenured_delta = 0
@@ -86,6 +91,8 @@ class LogParser:
     os.unlink(self.gc_file.name)
     os.unlink(self.young_file.name)
     os.unlink(self.root_scan_file.name)
+    os.unlink(self.cms_mark_file.name)
+    os.unlink(self.cms_rescan_file.name)
     os.unlink(self.mixed_duration_file.name)
     os.unlink(self.exhaustion_file.name)
     os.unlink(self.humongous_objects_file.name)
@@ -101,6 +108,8 @@ class LogParser:
     self.full_gc_file.close()
     self.young_file.close()
     self.root_scan_file.close()
+    self.cms_mark_file.close()
+    self.cms_rescan_file.close()
     self.mixed_duration_file.close()
     self.exhaustion_file.close()
     self.humongous_objects_file.close()
@@ -116,35 +125,66 @@ class LogParser:
     occupancy_threshold_arrow = ""
     if self.occupancy_threshold:
       occupancy_threshold_arrow = "set arrow 10 from graph 0,first %d to graph 1, first %d nohead; " % (self.occupancy_threshold, self.occupancy_threshold)
-      occupancy_threshold_arrow += "set label \"IHOP\" at graph 0,first %d offset 1,1; " % (self.occupancy_threshold)
+      occupancy_threshold_arrow += "set label \"%s\" at graph 0,first %d offset 1,1; " % ('IOF' if self.gc_alg_cms else 'IHOP', self.occupancy_threshold)
 
-    # one capped at .2, other with no yrange
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set yrange [0:0.2]; set output \"%s-stw-200ms-cap.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.pause_file.name)
-    os.system(gnuplot_cmd)
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.pause_file.name)
-    os.system(gnuplot_cmd)
+    # example of how to cap the y-range of the graph at .2
+    #gnuplot_cmd = "gnuplot -e 'set term png size %s; set yrange [0:0.2]; set output \"%s-stw-200ms-cap.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.pause_file.name)
+    #os.system(gnuplot_cmd)
+
+    if self.gc_alg_parallel:
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw.png\"; set xdata time; set ylabel \"Secs\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2 title \"all stw\"'" % (self.size, name, xrange, self.pause_file.name)
+      os.system(gnuplot_cmd)
 
     # Separate young and mixed stw events
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-young-stw.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.young_pause_file.name)
-    os.system(gnuplot_cmd)
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-mixed-stw.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2'" % (self.size, name, xrange, self.mixed_pause_file.name)
-    os.system(gnuplot_cmd)
+    if self.gc_alg_g1gc:
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-young.png\"; set xdata time; set ylabel \"Secs\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2 title \"young\"'" % (self.size, name, xrange, self.young_pause_file.name)
+      os.system(gnuplot_cmd)
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-mixed.png\"; set xdata time; set ylabel \"Secs\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2 title \"mixed\"'" % (self.size, name, xrange, self.mixed_pause_file.name)
+      os.system(gnuplot_cmd)
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-all.png\"; set xdata time; " \
+          "set ylabel \"Secs\"; " \
+          "set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; " \
+          "%s " \
+          "plot \"%s\" using 1:2 title \"young\"" \
+          ", \"%s\" using 1:2 title \"mixed\"'" % (self.size, name, xrange, self.young_pause_file.name, self.mixed_pause_file.name)
+      os.system(gnuplot_cmd)
+
+    # Separate young and mixed stw events
+    if self.gc_alg_cms:
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-young.png\"; set xdata time; set ylabel \"Secs\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:2 title \"young\"'" % (self.size, name, xrange, self.pause_file.name)
+      os.system(gnuplot_cmd)
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-all.png\"; set xdata time; " \
+          "set ylabel \"Secs\"; " \
+          "set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; " \
+          "%s " \
+          "plot \"%s\" using 1:2 title \"young\"" \
+          ", \"%s\" using 1:2 title \"mark\"" \
+          ", \"%s\" using 1:2 title \"rescan\"'" % (self.size, name, xrange, self.pause_file.name, self.cms_mark_file.name, self.cms_rescan_file.name)
+      os.system(gnuplot_cmd)
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-old.png\"; set xdata time; " \
+          "set ylabel \"Secs\"; " \
+          "set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; " \
+          "%s " \
+          "plot \"%s\" using 1:2 title \"mark\"" \
+          ", \"%s\" using 1:2 title \"rescan\"'" % (self.size, name, xrange, self.cms_mark_file.name, self.cms_rescan_file.name)
+      os.system(gnuplot_cmd)
 
     # Stw sub-timings
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-ext-root-scan.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:3'" % (self.size, name, xrange, self.pause_file.name)
-    os.system(gnuplot_cmd)
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-update-rs.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:4'" % (self.size, name, xrange, self.pause_file.name)
-    os.system(gnuplot_cmd)
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-scan-rs.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:5'" % (self.size, name, xrange, self.pause_file.name)
-    os.system(gnuplot_cmd)
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-object-copy.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:6'" % (self.size, name, xrange, self.pause_file.name)
-    os.system(gnuplot_cmd)
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-termination.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:7'" % (self.size, name, xrange, self.pause_file.name)
-    os.system(gnuplot_cmd)
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-other.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:8'" % (self.size, name, xrange, self.pause_file.name)
-    os.system(gnuplot_cmd)
-    gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-stw-unknown.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:9'" % (self.size, name, xrange, self.pause_file.name)
-    os.system(gnuplot_cmd)
+    if self.gc_alg_g1gc:
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-substw-ext-root-scan.png\"; set xdata time; set ylabel \"millis\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:3 title \"ext-root-scan\"'" % (self.size, name, xrange, self.pause_file.name)
+      os.system(gnuplot_cmd)
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-substw-update-rs.png\"; set xdata time; set ylabel \"millis\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:4 title \"update-rs\"'" % (self.size, name, xrange, self.pause_file.name)
+      os.system(gnuplot_cmd)
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-substw-scan-rs.png\"; set xdata time; set ylabel \"millis\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:5 title \"scan-rs\"'" % (self.size, name, xrange, self.pause_file.name)
+      os.system(gnuplot_cmd)
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-substw-object-copy.png\"; set xdata time; set ylabel \"millis\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:6 title \"object-copy\"'" % (self.size, name, xrange, self.pause_file.name)
+      os.system(gnuplot_cmd)
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-substw-termination.png\"; set xdata time; set ylabel \"millis\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:7 title \"termination\"'" % (self.size, name, xrange, self.pause_file.name)
+      os.system(gnuplot_cmd)
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-substw-other.png\"; set xdata time; set ylabel \"millis\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:8 title \"other\"'" % (self.size, name, xrange, self.pause_file.name)
+      os.system(gnuplot_cmd)
+      gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-substw-unknown.png\"; set xdata time; set ylabel \"millis\"; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:9 title \"unknown\"'" % (self.size, name, xrange, self.pause_file.name)
+      os.system(gnuplot_cmd)
 
     # total pause time
     gnuplot_cmd = "gnuplot -e 'set term png size %s; set output \"%s-total-pause.png\"; set xdata time; set timefmt \"%%Y-%%m-%%d:%%H:%%M:%%S\"; %s plot \"%s\" using 1:8 title \"%% of time in gc\"'" % (self.size, name, xrange, self.pause_count_file.name)
@@ -232,6 +272,52 @@ class LogParser:
 
     return
 
+  def determine_gc_alg(self):
+    with open(self.input_file) as f:
+      for line in f:
+        m = re.match('^CommandLine flags: .*', line, flags=0)
+        if m:
+          if re.match(".*-XX:\+UseG1GC.*", line, flags=0):
+            self.gc_alg_g1gc = True
+            pct = self.get_long_field(line, '-XX:InitiatingHeapOccupancyPercent', 45)
+            max = self.get_long_field(line, '-XX:MaxHeapSize')
+            if pct and max:
+              self.occupancy_threshold = int(max * (pct / 100.0) / 1048576.0)
+            return
+
+          elif re.match(".*-XX:\+UseConcMarkSweepGC.*", line, flags=0):
+            self.gc_alg_cms = True
+            pct = self.get_long_field(line, '-XX:CMSInitiatingOccupancyFraction')
+            max = self.get_long_field(line, '-XX:MaxHeapSize')
+            if pct and max:
+              self.occupancy_threshold = int(max * (pct / 100.0) / 1048576.0)
+            return
+          elif re.match(".*-XX:\+UseParallelGC.*", line, flags=0):
+            self.gc_alg_parallel = True
+            return
+
+        m = re.match(LogParser.heapG1GCPattern, line, flags=0)
+        if m:
+          self.gc_alg_g1gc = True
+          return
+
+        m = re.match(LogParser.heapCMSPattern, line, flags=0)
+        if m:
+          self.gc_alg_cms = True
+          return
+
+        m = re.match(LogParser.parallelPattern, line, flags=0)
+        if m:
+          self.gc_alg_parallel = True
+          return
+
+  def get_long_field(self, line, field, def_value=0):
+    m = re.match(".*%s=([0-9]+).*" % field, line, flags=0)
+    if m:
+      return long(m.group(1))
+    else:
+      return long(def_value)
+  
   def parse_log(self):
     with open(self.input_file) as f:
       for line in f:
@@ -239,17 +325,21 @@ class LogParser:
         self.line_has_timestamp(line)
 
         self.line_has_gc(line)
-        self.collect_root_scan_times(line)
-        self.collect_mixed_duration_times(line)
-        self.collect_to_space_exhaustion(line)
-        self.collect_humongous_objects(line)
-        self.collect_reclaimable(line)
 
-        if not self.occupancy_threshold:
-          self.collect_occupancy_threshold_pattern(line)
+        if self.gc_alg_g1gc:
+          self.collect_root_scan_times(line)
+          self.collect_mixed_duration_times(line)
+          self.collect_to_space_exhaustion(line)
+          self.collect_humongous_objects(line)
+          self.collect_reclaimable(line)
+          self.collect_stw_sub_timings(line)
 
-        # collect where time is spent inside stw
-        self.collect_stw_sub_timings(line)
+          # find the occupance threshold if CommandLine log line not present
+          if not self.occupancy_threshold:
+            self.collect_occupancy_threshold_pattern(line)
+
+        if self.gc_alg_cms:
+          self.write_cms_data(line)
 
         # This needs to be last
         if self.line_has_pause_time(line):
@@ -397,34 +487,57 @@ class LogParser:
     else:
       return current_value
 
+  def write_cms_data(self, line):
+    # collect stw times
+    # 1) initial marking step, checks from roots
+    # 2016-04-30T06:11:03.626+0000: 120634.808: [CMS-concurrent-mark: 0.922/0.922 secs] [Times: user=7.25 sys=0.59, real=0.93 secs] 
+    m = re.match(".*\[CMS-concurrent-mark: .*, real=([.0-9]+) secs.*", line, flags=0)
+    if m:
+      self.cms_mark_file.write("%s %.6f\n" % (self.timestamp_string(), float(m.group(1))))
+
+    # 2) rescan phase
+    # 2016-04-30T06:11:09.341+0000: 120640.523: [GC (CMS Final Remark) [YG occupancy: 737574 K (996800 K)]2016-04-30T06:11:09.341+0000: 120640.523: [Rescan (parallel) , 0.0728015 secs]2016-04-30T06:11:09.414+0000: 120640.596: [weak refs processing, 0.0236183 secs]2016-04-30T06:11:09.437+0000: 120640.619: [class unloading, 0.0157037 secs]2016-04-30T06:11:09.453+0000: 120640.635: [scrub symbol table, 0.0069954 secs]2016-04-30T06:11:09.460+0000: 120640.642: [scrub string table, 0.0007916 secs][1 CMS-remark: 22933820K(30349760K)] 23671395K(31346560K), 0.1314855 secs] [Times: user=0.83 sys=0.17, real=0.13 secs] 
+    m = re.match(".*\[Rescan .*, real=([.0-9]+) secs.*", line, flags=0)
+    if m:
+      self.cms_rescan_file.write("%s %.6f\n" % (self.timestamp_string(), float(m.group(1))))
+    
+
   def line_has_gc(self, line):
     m = re.match(LogParser.heapG1GCPattern, line, flags=0)
     if m:
       self.store_gc_amount(m)
       self.gc = True
-      self.gc_alg_g1gc = True
       return
 
     m = re.match(LogParser.parallelPattern, line, flags=0)
     if m:
-      self.gc_alg_parallel = True
       self.store_gc_amount(m)
       self.gc = True
       return
 
     m = re.match(LogParser.parallelFullPattern, line, flags=0)
     if m:
-      self.gc_alg_parallel = True
       self.store_gc_amount(m)
       self.full_gc = True
+
+    m = re.match(LogParser.heapCMSPattern, line, flags=0)
+    if m:
+      self.store_gc_amount(m)
+      self.gc = True
 
     return
 
   def store_gc_amount(self, matcher):
       i = 1
       self.pre_gc_young = self.scale(matcher.group(i), matcher.group(i+1))
-      i += 2
-      self.pre_gc_young_target = self.scale(matcher.group(i), matcher.group(i+1))
+
+      if self.gc_alg_g1gc or self.gc_alg_parallel:
+        i += 2
+        self.pre_gc_young_target = self.scale(matcher.group(i), matcher.group(i+1))
+
+      if self.gc_alg_cms:
+        i += 2
+        self.post_gc_young = self.scale(matcher.group(i), matcher.group(i+1))
 
       if self.gc_alg_g1gc:
         i += 2
@@ -480,6 +593,8 @@ class LogParser:
 def main():
     logParser = LogParser(sys.argv[1])
     try:
+      logParser.determine_gc_alg()
+      print("gc alg: parallel=%s, g1gc=%s, cms=%s" % (logParser.gc_alg_parallel, logParser.gc_alg_g1gc, logParser.gc_alg_cms))
       logParser.parse_log()
       logParser.close_files()
       basefilename = sys.argv[2] if len(sys.argv) > 2 else 'default'
