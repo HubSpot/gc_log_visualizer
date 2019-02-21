@@ -273,7 +273,10 @@ class LogParser:
     return
 
   def determine_gc_alg(self):
-    with open(self.input_file) as f:
+    filename = self.input_file
+    if "," in self.input_file:
+      filename = filename[0:filename.find(',')]
+    with open(filename) as f:
       for line in f:
         m = re.match('^CommandLine flags: .*', line, flags=0)
         if m:
@@ -319,32 +322,34 @@ class LogParser:
       return long(def_value)
   
   def parse_log(self):
-    with open(self.input_file) as f:
-      for line in f:
-        # This needs to be first
-        self.line_has_timestamp(line)
+    files = self.input_file.split(',')
+    for file in files:
+      with open(file) as f:
+        for line in f:
+          # This needs to be first
+          self.line_has_timestamp(line)
 
-        self.line_has_gc(line)
+          self.line_has_gc(line)
 
-        if self.gc_alg_g1gc:
-          self.collect_root_scan_times(line)
-          self.collect_mixed_duration_times(line)
-          self.collect_to_space_exhaustion(line)
-          self.collect_humongous_objects(line)
-          self.collect_reclaimable(line)
-          self.collect_stw_sub_timings(line)
+          if self.gc_alg_g1gc:
+            self.collect_root_scan_times(line)
+            self.collect_mixed_duration_times(line)
+            self.collect_to_space_exhaustion(line)
+            self.collect_humongous_objects(line)
+            self.collect_reclaimable(line)
+            self.collect_stw_sub_timings(line)
 
-          # find the occupance threshold if CommandLine log line not present
-          if not self.occupancy_threshold:
-            self.collect_occupancy_threshold_pattern(line)
+            # find the occupance threshold if CommandLine log line not present
+            if not self.occupancy_threshold:
+              self.collect_occupancy_threshold_pattern(line)
 
-        if self.gc_alg_cms:
-          self.write_cms_data(line)
+          if self.gc_alg_cms:
+            self.write_cms_data(line)
 
-        # This needs to be last
-        if self.line_has_pause_time(line):
-          self.output_data()
-          self.stw.reset()
+          # This needs to be last
+          if self.line_has_pause_time(line):
+            self.output_data()
+            self.stw.reset()
     
   def output_data(self):
     if self.mixed_duration_count == 0:
