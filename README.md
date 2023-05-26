@@ -1,3 +1,12 @@
+# Deprecated
+
+This visualizer worked great for very old java versions, but has not been kept up-to-date for newer versions. As HubSpot is mostly running newer (jdk11/17) versions,
+we will not be maintaining this anymore.
+
+We've tried out and had good luck with https://github.com/krzysztofslusarski/jvm-gc-logs-analyzer, which supports newer log formats and also has many different helpful views.
+
+<summary>Old Readme contents</summary>
+<details>
 # Run a gc.log through gnuplot for multiple views of GC performance
 
 The python script `gc_log_visualizer.py` will use gnuplot to graph interesting characteristics
@@ -95,3 +104,4 @@ as well as the vertical groupings that have the potential to
 cause to-space exhaustion.
 
 ![example of humongous objects](images/humongous-objects.png)
+   </details>
