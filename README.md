@@ -29,6 +29,9 @@ The shell script `regionsize_vs_objectsize.sh` will take a gc.log
 as input and return the percent of Humongous Objects that would fit
 into various G1RegionSize's (2mb-32mb by powers of 2).
 
+If JVM Unified Logging Framework is enabled, this will not work out of the box, we will need to enable printing of information about adaptive generation size. 
+See [gc log preparation](https://github.com/HubSpot/gc_log_visualizer#gc-log-preparation) for adding GC logs to make this work.
+
 ```
   ./regionsize_vs_objectsize.sh <gc.log>
   1986 humongous objects referenced in <gc.log>
@@ -60,6 +63,8 @@ The following gc params are required for full functionality.
 ```
   -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCApplicationStoppedTime -XX:+PrintAdaptiveSizePolicy
 ```
+_For JVM Unified Logging Framework, corresponding options can be found [here](https://docs.oracle.com/javase/9/tools/java.htm#JSWOR-GUID-9569449C-525F-4474-972C-4C1F63D5C357).
+For example, for legacy GC flag `-XX:PrintAdaptiveSizePolicy` (used to add log lines to calculate humongous objects with `regionsize_vs_objectsize.sh`) instead use `-Xlog:ergo*=debug`._
 
 ## required python libs
 The python libs that are required can be found in the setup.py
